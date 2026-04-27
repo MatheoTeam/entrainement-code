@@ -1,5 +1,6 @@
 from flask import Flask, request, session
 import mssql_python
+import datetime
 
 # Création de l'application Flask
 app = Flask(__name__)
@@ -7,11 +8,23 @@ app.secret_key = 'votre_cle_secrete'  # Nécessaire pour les sessions
 
 def detect_type(value):
     """Détecte le type interprété d'une valeur CSV."""
-    v = value.strip()
+    if value is None:
+        return "vide"
+    v = str(value).strip()
     if v == "":
         return "vide"
     if v.lower() in {"true", "false"}:
         return "booleen"
+    try:
+        datetime.datetime.strptime(v, '%d/%m/%Y')
+        return "date"
+    except ValueError:
+        pass
+    try:
+        datetime.datetime.strptime(v, '%Y%m%d')
+        return "date"
+    except ValueError:
+        pass
     try:
         int(v)
         return "entier"
@@ -24,45 +37,16 @@ def detect_type(value):
         pass
     return "string"
 
-def formater_date_pmi(date_str):
-    """Convertit une date PMI (YYYYMMDD) en format JJ/MM/AAAA."""
-    if len(date_str) == 8 and date_str.isdigit():
-        annee = date_str[0:4]
-        mois = date_str[4:6]
-        jour = date_str[6:8]
-        return f"{jour}/{mois}/{annee}"
-    return date_str
-
-def valider_date_pmi(date_str):
-    """Valide une date affichage PMI (8 chiffres YYYYMMDD)."""
-    if len(date_str) != 8:
-        return False
-    if not date_str.isdigit():
-        return False
+def gestion_date_pmi(date_str):
+    """Valide une date PMI (YYYYMMDD) et la formate en JJ/MM/AAAA.
+       Retourne None si la date est invalide."""
+    if len(date_str) != 8 or not date_str.isdigit():
+        return None
     try:
-        annee = int(date_str[0:4])
-        mois = int(date_str[4:6])
-        jour = int(date_str[6:8])
-        
-        if mois < 1 or mois > 12:
-            return False
-        if jour < 1:
-            return False
-        
-        # Nombre de jours par mois
-        jours_par_mois = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        
-        # Vérifier si c'est une année bissextile pour février
-        if mois == 2:
-            if (annee % 4 == 0 and annee % 100 != 0) or (annee % 400 == 0):
-                jours_par_mois[1] = 29
-        
-        if jour > jours_par_mois[mois - 1]:
-            return False
-        
-        return True
+        date_obj = datetime.datetime.strptime(date_str, '%Y%m%d')
+        return date_obj.strftime('%d/%m/%Y')
     except ValueError:
-        return False
+        return None
 
 def lire_csv(fichier):
     """Lit un fichier CSV et valide les dates. Retourne (tableau, erreur)."""
@@ -79,12 +63,12 @@ def lire_csv(fichier):
                 # La dernière colonne doit être une date en 8 chiffres
                 if cellule.isdigit():
                     if len(cellule) != 8:
-                        return None, f"Date incomplète trouvée: {cellule} (doit avoir 8 chiffres)"
-                    if not valider_date_pmi(cellule):
-                        return None, f"Date invalide trouvée: {cellule}"
-                    lignes[i][j] = formater_date_pmi(cellule)
+                        return None, f"Date incomplète trouvée: {cellule} (doit avoir 8 chiffres (ligne {i}))"
+                    if not gestion_date_pmi(cellule):
+                        return None, f"Date invalide trouvée: {cellule} (ligne {i})"
+                    lignes[i][j] = gestion_date_pmi(cellule)
                 else:
-                    return None, f"Date invalide trouvée: {cellule} (doit être 8 chiffres)"
+                    return None, f"Date invalide trouvée: {cellule} (doit être 8 chiffres (ligne {i}))"
             else:
                 lignes[i][j] = cellule
     return lignes, None
@@ -218,17 +202,25 @@ def index_post():
         page += "</table>"
 
     # Création de la table des données du fichier
-    page += "<h3>Contenu du fichier:</h3>"
+        page += "<h3>Contenu du fichier:</h3>"
     page += "<table border='1'>"
+    
+    types_colonnes = []
+    if len(tableau) > 1:
+        for col_index in range(len(tableau[1])):
+            typ = detect_type(tableau[1][col_index])
+            types_colonnes.append(typ)
+    else:
+        types_colonnes = ["unknown"] * len(tableau[0])
+    
     premiere = True
     for ligne in tableau:
         page += "<tr>"
-        for cellule in ligne:
+        for col_index, cellule in enumerate(ligne):
             if premiere:
-                page += "<th>" + cellule + "</th>"
+                page += f"<th>{cellule} <small>({types_colonnes[col_index]})</small></th>"
             else:
-                typ = detect_type(cellule)
-                page += f"<td>{cellule} <small>({typ})</small></td>"
+                page += f"<td>{cellule}</td>"
         page += "</tr>"
         premiere = False
     page += "</table>"
