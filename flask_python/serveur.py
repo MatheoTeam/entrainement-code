@@ -8,11 +8,7 @@ app.secret_key = 'votre_cle_secrete'  # Nécessaire pour les sessions
 
 def detect_type(value):
     """Détecte le type interprété d'une valeur CSV."""
-    if value is None:
-        return "vide"
-    v = str(value).strip()
-    if v == "":
-        return "vide"
+    v = value.strip()
     if v.lower() in {"true", "false"}:
         return "booleen"
     try:
@@ -53,6 +49,12 @@ def lire_csv(fichier):
     lignes = [ligne.decode("utf-8").strip().split(",") for ligne in fichier]
     if not lignes:
         return [], None
+    # Vérifier les valeurs vides
+    for i in range(len(lignes)):
+        for j in range(len(lignes[i])):
+            cellule = lignes[i][j].strip()
+            if cellule == "":
+                return None, f"Valeur vide trouvée à la ligne {i+1}, colonne {j+1}"
     # Valider et formater les dates dans les données (dernière colonne)
     derniere_col = len(lignes[0]) - 1
     for i in range(1, len(lignes)):
