@@ -1,3 +1,3 @@
-id, nom, email, age, date
-1, Mathéo, matheo@gmail.com, 19, 20260420
-2, Aymeric, aymeric@gmail.com, 47, 20260420
+id, nom, email, age, actif, date
+1, Mathéo, matheo@gmail.com, 19, True,  20260420
+2, Aymeric, aymeric@gmail.com, 47, False, 20260420
