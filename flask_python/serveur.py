@@ -75,6 +75,12 @@ def lire_csv(fichier):
                 lignes[i][j] = cellule
     return lignes, None
 
+# Vérifie que les en-têtes sont exactement les mêmes entre deux CSV
+def comparer_entetes(ancien_entetes, nouveaux_entetes):
+    ancien = [col.strip().lower() for col in ancien_entetes]
+    nouveau = [col.strip().lower() for col in nouveaux_entetes]
+    return ancien == nouveau
+
 # Connexion à la BDD 
 def inserer_bdd(tableau, nom_table):
     """Insère les données d'un tableau dans une table MSSQL."""
@@ -173,10 +179,16 @@ def index_post():
         return page
     
     nom_table = fichier.filename.replace(".csv", "").replace(".", "_")
+
+    ancien_tableau = session.get('ancien_tableau')
+    if ancien_tableau is not None:
+        if not comparer_entetes(ancien_tableau[0], tableau[0]):
+            page += "<p><b>ERREUR: structure différente du CSV.</b></p>"
+            return page
+
     inserer_bdd(tableau, nom_table)
     page += f"<p>Table '{nom_table}' créée </p>"
 
-    ancien_tableau = session.get('ancien_tableau')
     if ancien_tableau is not None:
         differences = comparer_fichiers(ancien_tableau, tableau)
         
