@@ -77,8 +77,8 @@ def lire_csv(fichier):
 
 # Vérifie que les en-têtes sont exactement les mêmes entre deux CSV
 def comparer_entetes(ancien_entetes, nouveaux_entetes):
-    ancien = [col.strip().lower() for col in ancien_entetes]
-    nouveau = [col.strip().lower() for col in nouveaux_entetes]
+    ancien = [col.strip() for col in ancien_entetes]
+    nouveau = [col.strip() for col in nouveaux_entetes]
     return ancien == nouveau
 
 # Connexion à la BDD 
