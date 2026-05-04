@@ -201,7 +201,7 @@ def index_post():
     # Vérifier les en-têtes via information_schema.columns (table de référence en BDD)
     try:
         colonnes_bdd = recuperer_colonnes_table(nom_table)
-        if colonnes_bdd:  # Si la table de référence existe déjà
+        if colonnes_bdd:  # Si la table existe déjà
             colonnes_csv = [col.strip() for col in tableau[0]]
             colonnes_bdd_names = [col[0] for col in colonnes_bdd]
             if colonnes_csv != colonnes_bdd_names:
