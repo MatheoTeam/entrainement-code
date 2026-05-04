@@ -75,21 +75,38 @@ def lire_csv(fichier):
                 lignes[i][j] = cellule
     return lignes, None
 
-# Vérifie que les en-têtes sont exactement les mêmes entre deux CSV
-def comparer_entetes(ancien_entetes, nouveaux_entetes):
-    ancien = [col.strip() for col in ancien_entetes]
-    nouveau = [col.strip() for col in nouveaux_entetes]
-    return ancien == nouveau
-
-# Connexion à la BDD 
-def inserer_bdd(tableau, nom_table):
-    """Insère les données d'un tableau dans une table MSSQL."""
+# Connexion à la BDD
+def connecter_bdd():
+    """Établit une connexion à la base de données MSSQL."""
     conn = mssql_python.connect(
         server=r"UC00350\SQLEXPRESS",
         database="test",
         trusted_connection="yes",
         trust_server_certificate="yes"
     )
+    return conn
+
+def recuperer_colonnes_table(nom_table):
+    """Récupère les colonnes d'une table existante via information_schema.columns."""
+    conn = connecter_bdd()
+    cursor = conn.cursor()
+    
+    # Requête sur information_schema.columns pour récupérer les métadonnées
+    query = f"""
+    SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+    FROM information_schema.columns
+    WHERE TABLE_NAME = '{nom_table}'
+    ORDER BY ORDINAL_POSITION
+    """
+    cursor.execute(query)
+    colonnes = cursor.fetchall()
+    conn.close()
+    
+    return colonnes
+
+def inserer_bdd(tableau, nom_table):
+    """Insère les données d'un tableau dans une table MSSQL."""
+    conn = connecter_bdd()
     cursor = conn.cursor()
 
     colonnes = tableau[0]
@@ -179,12 +196,22 @@ def index_post():
         return page
     
     nom_table = fichier.filename.replace(".csv", "").replace(".", "_")
-
     ancien_tableau = session.get('ancien_tableau')
-    if ancien_tableau is not None:
-        if not comparer_entetes(ancien_tableau[0], tableau[0]):
-            page += "<p><b>ERREUR: structure différente du CSV.</b></p>"
-            return page
+
+    # Vérifier les en-têtes via information_schema.columns (table de référence en BDD)
+    try:
+        colonnes_bdd = recuperer_colonnes_table(nom_table)
+        if colonnes_bdd:  # Si la table de référence existe déjà
+            colonnes_csv = [col.strip() for col in tableau[0]]
+            colonnes_bdd_names = [col[0] for col in colonnes_bdd]
+            if colonnes_csv != colonnes_bdd_names:
+                page += "<p><b>ERREUR: structure différente du CSV vs la table de référence en BDD.</b></p>"
+                page += f"<p>Colonnes attendues: {', '.join(colonnes_bdd_names)}</p>"
+                page += f"<p>Colonnes du CSV: {', '.join(colonnes_csv)}</p>"
+                return page
+    except Exception as e:
+        # La table de référence n'existe pas encore, c'est normal à la première insertion
+        pass
 
     inserer_bdd(tableau, nom_table)
     page += f"<p>Table '{nom_table}' créée </p>"
@@ -216,7 +243,7 @@ def index_post():
         page += "</table>"
 
     # Création de la table des données du fichier
-        page += "<h3>Contenu du fichier:</h3>"
+    page += "<h3>Contenu du fichier:</h3>"
     page += "<table border='1'>"
     
     types_colonnes = []
