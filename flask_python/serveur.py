@@ -93,7 +93,7 @@ def recuperer_colonnes_table(nom_table):
     
     # Requête sur information_schema.columns pour récupérer les métadonnées
     query = f"""
-    SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+    SELECT COLUMN_NAME, DATA_TYPE
     FROM information_schema.columns
     WHERE TABLE_NAME = '{nom_table}'
     ORDER BY ORDINAL_POSITION
@@ -205,7 +205,7 @@ def index_post():
             colonnes_csv = [col.strip() for col in tableau[0]]
             colonnes_bdd_names = [col[0] for col in colonnes_bdd]
             if colonnes_csv != colonnes_bdd_names:
-                page += "<p><b>ERREUR: structure différente du CSV vs la table de référence en BDD.</b></p>"
+                page += "<p><b>ERREUR: structure différente entre le CSV et la BDD.</b></p>"
                 page += f"<p>Colonnes attendues: {', '.join(colonnes_bdd_names)}</p>"
                 page += f"<p>Colonnes du CSV: {', '.join(colonnes_csv)}</p>"
                 return page
