@@ -44,6 +44,20 @@ def gestion_date_pmi(date_str):
     except ValueError:
         return None
 
+def verifier_format_colonne(ancien_tableau, nouveau_tableau):
+    """Vérifie que chaque colonne garde le même format. Retourne (True, None) ou (False, message_erreur)."""
+    if not ancien_tableau or len(ancien_tableau) < 2:
+        return True, None
+    
+    for col_idx in range(len(ancien_tableau[0])):
+        ancien_type = detect_type(str(ancien_tableau[1][col_idx]))
+        for row_idx, row in enumerate(nouveau_tableau[1:], 2):
+            nouveau_type = detect_type(str(row[col_idx]))
+            if nouveau_type != ancien_type:
+                return False, f"Colonne '{ancien_tableau[0][col_idx]}': type changé de '{ancien_type}' à '{nouveau_type}' (ligne {row_idx})"
+    
+    return True, None
+
 def lire_csv(fichier):
     """Lit un fichier CSV et valide les dates. Retourne (tableau, erreur)."""
     lignes = [ligne.decode("utf-8").strip().split(",") for ligne in fichier]
@@ -217,6 +231,12 @@ def index_post():
     page += f"<p>Table '{nom_table}' créée </p>"
 
     if ancien_tableau is not None:
+        # Vérifier que le format des colonnes n'a pas changé
+        valide, erreur = verifier_format_colonne(ancien_tableau, tableau)
+        if not valide:
+            page += f"<p><b>ERREUR FORMAT:</b> {erreur}</p>"
+            return page
+        
         differences = comparer_fichiers(ancien_tableau, tableau)
         
         page += "<h3>Différences détectées:</h3>"
