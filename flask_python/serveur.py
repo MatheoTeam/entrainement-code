@@ -2,9 +2,15 @@ from flask import Flask, request, session
 import mssql_python
 import datetime
 
+def fichier_clients(nom):
+    """Retourne True si les validations strictes doivent s'appliquer."""
+    return nom.lower() in {"clients.csv", "clients.ex.csv"}
+
 # Création de l'application Flask
 app = Flask(__name__)
 app.secret_key = 'votre_cle_secrete'  # Nécessaire pour les sessions
+# Limite de taille pour les fichiers uploadés (50 Mo)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  
 
 def detect_type(value):
     """Détecte le type interprété d'une valeur CSV."""
@@ -46,9 +52,6 @@ def gestion_date_pmi(date_str):
 
 def verifier_format_colonne(ancien_tableau, nouveau_tableau):
     """Vérifie que chaque colonne garde le même format. Retourne (True, None) ou (False, message_erreur)."""
-    if not ancien_tableau or len(ancien_tableau) < 2:
-        return True, None
-    
     for col_idx in range(len(ancien_tableau[0])):
         ancien_type = detect_type(str(ancien_tableau[1][col_idx]))
         for row_idx, row in enumerate(nouveau_tableau[1:], 2):
@@ -58,35 +61,42 @@ def verifier_format_colonne(ancien_tableau, nouveau_tableau):
     
     return True, None
 
-def lire_csv(fichier):
-    """Lit un fichier CSV et valide les dates. Retourne (tableau, erreur)."""
-    lignes = [ligne.decode("utf-8").strip().split(",") for ligne in fichier]
+def lire_csv(fichier, strict=False):
+    lignes = [ligne.decode("utf-8").strip().split(";") for ligne in fichier]
     if not lignes:
         return [], None
+
+    # Nettoyage BOM + espaces colonnes
+    lignes[0] = [col.replace("\ufeff", "").strip() for col in lignes[0]]
+
     # Vérifier les valeurs vides
     for i in range(len(lignes)):
         for j in range(len(lignes[i])):
-            cellule = lignes[i][j].strip()
-            if cellule == "":
+            if lignes[i][j].strip() == "":
                 return None, f"Valeur vide trouvée à la ligne {i+1}, colonne {j+1}"
-    # Valider et formater les dates dans les données (dernière colonne)
+
+    # SI strict = false => pas de validation date
+    if not strict:
+        return lignes, None
+
+    # Sinon : on valide la dernière colonne comme date PMI (uniquement pour clients)
     derniere_col = len(lignes[0]) - 1
     for i in range(1, len(lignes)):
         for j in range(len(lignes[i])):
             cellule = lignes[i][j].strip()
-            # Vérifier si c'est la dernière colonne
+
             if j == derniere_col:
-                # La dernière colonne doit être une date en 8 chiffres
                 if cellule.isdigit():
                     if len(cellule) != 8:
-                        return None, f"Date incomplète trouvée: {cellule} (doit avoir 8 chiffres (ligne {i}))"
+                        return None, f"Date incomplète trouvée: {cellule} (ligne {i})"
                     if not gestion_date_pmi(cellule):
                         return None, f"Date invalide trouvée: {cellule} (ligne {i})"
                     lignes[i][j] = gestion_date_pmi(cellule)
                 else:
-                    return None, f"Date invalide trouvée: {cellule} (doit être 8 chiffres (ligne {i}))"
+                    return None, f"Date invalide trouvée: {cellule} (ligne {i})"
             else:
                 lignes[i][j] = cellule
+
     return lignes, None
 
 # Connexion à la BDD
@@ -119,20 +129,45 @@ def recuperer_colonnes_table(nom_table):
     return colonnes
 
 def inserer_bdd(tableau, nom_table):
-    """Insère les données d'un tableau dans une table MSSQL."""
+    """Insère les données d'un tableau dans une table MSSQL (mode tolérant)."""
+
     conn = connecter_bdd()
     cursor = conn.cursor()
 
-    colonnes = tableau[0]
+    colonnes = [c.replace("\ufeff", "").strip() for c in tableau[0]]
     data = tableau[1:]
+
+    nb_colonnes = len(colonnes)
+
+    data_nettoyee = []
+
+    lignes_ignorees = 0
+
+    for ligne in data:
+        if len(ligne) < nb_colonnes:
+            ligne = ligne + [None] * (nb_colonnes - len(ligne))
+
+        elif len(ligne) > nb_colonnes:
+            ligne = ligne[:nb_colonnes]
+
+        data_nettoyee.append(ligne)
 
     cursor.execute(f"DROP TABLE IF EXISTS {nom_table}")
 
-    colonnes_sql = ",".join([col + " NVARCHAR(255)" for col in colonnes])
+    colonnes_sql = ",".join(
+        [f"[{col}] NVARCHAR(MAX)" for col in colonnes]
+    )
+
     cursor.execute(f"CREATE TABLE {nom_table} ({colonnes_sql})")
 
     champs = ",".join(["?" for _ in colonnes])
-    cursor.executemany(f"INSERT INTO {nom_table} VALUES ({champs})", data)
+
+    colonnes_sql_insert = ",".join([f"[{c}]" for c in colonnes])
+
+    cursor.executemany(
+        f"INSERT INTO {nom_table} ({colonnes_sql_insert}) VALUES ({champs})",
+        data_nettoyee
+    )
 
     conn.commit()
     conn.close()
@@ -194,7 +229,7 @@ def index_post():
     """Page principale pour uploader et traiter les fichiers CSV."""
     
     fichier = request.files["fichier"]
-    tableau, erreur = lire_csv(fichier)
+    tableau, erreur = lire_csv(fichier, strict=fichier_clients(fichier.filename))
     
     page = """
     <h1>Upload CSV</h1>
@@ -210,6 +245,7 @@ def index_post():
         return page
     
     nom_table = fichier.filename.replace(".csv", "").replace(".", "_")
+    nom_table = nom_table.replace("\ufeff", "")
     ancien_tableau = session.get('ancien_tableau')
 
     # Vérifier les en-têtes via information_schema.columns (table de référence en BDD)
@@ -230,15 +266,18 @@ def index_post():
     inserer_bdd(tableau, nom_table)
     page += f"<p>Table '{nom_table}' créée </p>"
 
-    if ancien_tableau is not None:
+    if ancien_tableau is not None and fichier_clients(fichier.filename):
         # Vérifier que le format des colonnes n'a pas changé
         valide, erreur = verifier_format_colonne(ancien_tableau, tableau)
         if not valide:
             page += f"<p><b>ERREUR FORMAT:</b> {erreur}</p>"
             return page
         
-        differences = comparer_fichiers(ancien_tableau, tableau)
-        
+        if fichier_clients(fichier.filename):
+            differences = comparer_fichiers(ancien_tableau, tableau)
+        else:
+            differences = None
+                
         page += "<h3>Différences détectées:</h3>"
         page += "<table border='1'>"
         
