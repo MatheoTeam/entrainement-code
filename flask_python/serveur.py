@@ -1,6 +1,7 @@
 from flask import Flask, request, session
 import mssql_python
 import datetime
+import re
 
 def fichier_clients(nom):
     """Retourne True si les validations strictes doivent s'appliquer."""
@@ -50,6 +51,34 @@ def gestion_date_pmi(date_str):
     except ValueError:
         return None
 
+def foo(code_article):
+    """Retourne 'conforme' ou 'non-conforme' selon le code article."""
+    code = str(code_article).strip()
+    if len(code) == 9 and code[:7].isdigit() and code[7] == '-' and code[8].isdigit() or len(code) == 7 and code.isdigit():
+        return "conforme"
+    else :
+        return "non-conforme"
+
+def ajouter_colonne_conformite(lignes):
+    """Ajoute la colonne conformité aux lignes du fichier articles.csv."""
+    if not lignes:
+        return lignes
+
+    entetes = [col.strip() for col in lignes[0]]
+    if "conformité" not in [col.lower() for col in entetes]:
+        entetes.append("conformité")
+    lignes[0] = entetes
+
+    for index in range(1, len(lignes)):
+        ligne = lignes[index]
+        if len(ligne) == len(entetes) - 1:
+            ligne.append(foo(ligne[0] if ligne else ""))
+        else:
+            ligne[-1] = foo(ligne[0] if ligne else "")
+        lignes[index] = ligne
+
+    return lignes
+
 def verifier_format_colonne(ancien_tableau, nouveau_tableau):
     """Vérifie que chaque colonne garde le même format. Retourne (True, None) ou (False, message_erreur)."""
     for col_idx in range(len(ancien_tableau[0])):
@@ -74,6 +103,9 @@ def lire_csv(fichier, strict=False):
         for j in range(len(lignes[i])):
             if lignes[i][j].strip() == "":
                 return None, f"Valeur vide trouvée à la ligne {i+1}, colonne {j+1}"
+
+    if fichier.filename == "articles.csv":
+        lignes = ajouter_colonne_conformite(lignes)
 
     # SI strict = false => pas de validation date
     if not strict:
