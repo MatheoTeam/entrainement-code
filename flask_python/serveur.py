@@ -2,6 +2,10 @@ from flask import Flask, request, session
 import mssql_python
 import datetime
 import re
+import yaml
+
+with open("flask_python/config.yml", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
 
 def fichier_clients(nom):
     """Retourne True si les validations strictes doivent s'appliquer."""
@@ -9,9 +13,8 @@ def fichier_clients(nom):
 
 # Création de l'application Flask
 app = Flask(__name__)
-app.secret_key = 'votre_cle_secrete'  # Nécessaire pour les sessions
-# Limite de taille pour les fichiers uploadés (50 Mo)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  
+app.secret_key = config['flask']['secret_key']
+app.config['MAX_CONTENT_LENGTH'] = config['flask']['max_upload_size_mb'] * 1024 * 1024
 
 def detect_type(value):
     """Détecte le type interprété d'une valeur CSV."""
@@ -19,12 +22,7 @@ def detect_type(value):
     if v.lower() in {"true", "false"}:
         return "booleen"
     try:
-        datetime.datetime.strptime(v, '%d/%m/%Y')
-        return "date"
-    except ValueError:
-        pass
-    try:
-        datetime.datetime.strptime(v, '%Y%m%d')
+        datetime.datetime.strptime(v, config['dates']['format_acceptes'])
         return "date"
     except ValueError:
         pass
@@ -46,8 +44,8 @@ def gestion_date_pmi(date_str):
     if len(date_str) != 8 or not date_str.isdigit():
         return None
     try:
-        date_obj = datetime.datetime.strptime(date_str, '%Y%m%d')
-        return date_obj.strftime('%d/%m/%Y')
+        date_obj = datetime.datetime.strptime(date_str, config['dates']['format_pmi_entree'])
+        return date_obj.strftime(config['dates']['format_pmi_sortie'])
     except ValueError:
         return None
 
@@ -64,7 +62,7 @@ PATTERN = re.compile(
     r")$"
 )
 
-def foo(code_article):
+def conformité(code_article):
     """Retourne 'conforme' ou 'non-conforme' selon le code article."""
     code = str(code_article).strip()
     return "conforme" if PATTERN.match(code) else "non-conforme"
@@ -82,9 +80,9 @@ def ajouter_colonne_conformite(lignes):
     for index in range(1, len(lignes)):
         ligne = lignes[index]
         if len(ligne) == len(entetes) - 1:
-            ligne.append(foo(ligne[0] if ligne else ""))
+            ligne.append(conformité(ligne[0] if ligne else ""))
         else:
-            ligne[-1] = foo(ligne[0] if ligne else "")
+            ligne[-1] = conformité(ligne[0] if ligne else "")
         lignes[index] = ligne
 
     return lignes
@@ -145,10 +143,10 @@ def lire_csv(fichier, strict=False):
 def connecter_bdd():
     """Établit une connexion à la base de données MSSQL."""
     conn = mssql_python.connect(
-        server=r"UC00350\SQLEXPRESS",
-        database="test",
-        trusted_connection="yes",
-        trust_server_certificate="yes"
+        server=config['mssql']['server'],
+        database=config['mssql']['database'],
+        trusted_connection=config['mssql']['trusted_connection'],
+        trust_server_certificate=config['mssql']['trust_server_certificate']
     )
     return conn
 

@@ -1,0 +1,8 @@
+flask:
+  max_upload_size_mb: 50
+
+mssql:
+  server: "UC00350\\SQLEXPRESS"
+  database: "test"
+  trusted_connection: "yes"
+  trust_server_certificate: "yes"
