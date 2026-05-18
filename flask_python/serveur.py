@@ -53,11 +53,14 @@ def gestion_date_pmi(date_str):
 
 PATTERN = re.compile(
     r"^(?:"
-    r"[LB]?[0-9A-Z]{2,3}[A-Z]?[0-9]{2,4}[A-Z]?(?:\/[0-9]{2})?(?:-[0-9])?"  # cas général
-    r"|[12][0-9]{5}"          # main d'œuvre
-    r"|L.+"                   # libellés
-    r"|EP[0-9]{5}"            # emballages palettes
-    r"|EC[0-9]{5}"            # emballages coiffes
+    r"|[0-9]{3}A?[BNGCTO][LBCPFM][0-9]{3}[VIC](?:\/[0-9]{2})?"  # PL matières plastiques
+    r"|850[1-6][0-9]{4}"  # OU outillage
+    r"|2[17][0-9]{4}"  # MO main d'œuvre
+    r"|[0-9]{3}[EVIPMA][0-9]{3}"  # MT maintenance
+    r"|[0-9]{7}(?:-[0-9])?"  # FFFNNNN + indice
+    r"|B[0-9]{5}"  # BR broyés
+    r"|L.+"  # libellés
+    r"|E[PC][0-9]{5}"  # EP/EC emballages
     r")$"
 )
 
